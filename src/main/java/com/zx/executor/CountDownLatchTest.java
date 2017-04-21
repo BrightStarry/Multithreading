@@ -3,7 +3,8 @@ package com.zx.executor;
 import java.util.concurrent.CountDownLatch;
 
 /**
- * Created by 97038 on 2017-04-21.
+    计数器类
+    确保一组线程能够阻塞自己，使一组线程相互等待，同时完成任务。
  */
 public class CountDownLatchTest {
     public static void main(String[] args) throws InterruptedException {
