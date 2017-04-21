@@ -570,16 +570,6 @@ Compare and swap(比较且交换)CAS算法。是基于cpu硬件的。
                     await替代wait，signal替代notify,signalAll替代notifyAll。
                 然后它是被绑定到Lock上的，要创建一个Lock的Condition要使用newCondition()方法。
                 它和普通的监听器的区别就在于，它可以为多个线程间建立不同的Condition。
-
-
-
-
-
-
-
-
-
-
-
-
-
+                差不多就是A线程使用ConditionA.await()来阻塞自己，B线程使用ConditionB.await()来阻塞自己，
+                C线程使用ConditionC.await()来阻塞自己，那么在A线程中调用ConditionB.signal()，就肯定会唤醒
+                B线程，而不是唤醒C线程，而对于普通的notify()方法来说，只会唤醒任意一个线程。
