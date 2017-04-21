@@ -1,0 +1,497 @@
+2017年4月15日 09:35:42
+    正式开始学习多线程的项目。
+    昨晚无意中发现了 百度阅读，里面的书虽然都是要钱的，但是关于java的书还真挺多。
+    上午上班的路上看了一路的关于多线程的书。
+---------------------------------------------------------------------------------------------------------------------\
+    synchronized关键字是不能继承的（也就是子类中的父类的方法，默认并没有synchronized）
+    Thread.currentThread().getName()显示当前线程的名字
+    sleep()不会释放锁
+    想要给类的static对象加锁，可以写synchronized(className.class){}
+    volatile 用来修饰变量，表示这个变量会被多个线程访问，当线程读取这个变量的值的时候，每次都会去主存中读取（有一个寄存器，大概相当于缓存）
+    可以通过volatile保证可见性，也就是，任意数据一旦发生变化，其他线程能够马上看见
+    notify()，notifyAll(),wait()这些方法之所以放在Object类中而不是Thread类中，是因为，线程的锁是对象级的，
+这些通知或者等待方法，都是等待或通知 获得或等待同一个对象锁的线程。
+    多线程并非一定比单线程快，因为假设单核CPU，处理若干个线程，其实是每个线程执行一段时间片，因为每一段时间片的时间很短，所以看起来是
+并发执行的。但是这种方式还需要记录每个线程的上下文，需要一定的开销。所谓上下文，就是当A线程切换到B，再切回A的时候，Cpu需要记录A之间的状态。
+所以在数据量少的情况下，单线程有时比多线程还要快。
+    减少上下文切换的方法
+        1.无锁并发编程，将数据Id按照hash算法取模分段，每个线程处理不同的段的数据、
+        2.CAS算法，atomic包使用cas算法来更新数据，不需要加锁。
+        3.使用最少线程。
+        4.协程，在单线程中实现多任务的调度，并在单线程中维持多个任务间的切换。
+    线程之间的通讯：共享内存和消息传递
+
+    线程的两种实现方式
+    1.继承Thread
+    public class ThreadTest extends Thread{
+        @Override
+        public void run() {
+            while(true){
+                System.out.println("继承Thread的多线程类");
+            }
+        }
+        public static void main(String args[]){
+            new ThreadTest().run();
+        }
+    }
+    2.实现Runnable接口
+    public class RunnableTest implements Runnable {
+        @Override
+        public void run() {
+            while (true) {
+                System.out.println("实现Runnable接口的多线程类");
+            }
+        }
+        public static void main(String args[]) {
+            new Thread(new RunnableTest()).start();
+        }
+    }
+------------------------------------------------------------------------------------------------------------------
+    问题探讨 ：
+        public class RunnableTest implements Runnable {
+            private int i = 100;
+            public synchronized void decrement(){
+                i--;
+            }
+            public synchronized int getI(){
+                return i;
+            }
+            @Override
+            public void run() {
+                while (i >0) {
+                    decrement();
+                    System.out.println("当前值：" + getI());
+                }
+            }
+            public static void main(String args[]) {
+                new Thread(new RunnableTest(),"thread1").start();
+                new Thread(new RunnableTest(),"thread2").start();
+                new Thread(new RunnableTest(),"thread2").start();
+            }
+        }
+    这样子的写法，结果i并没有同步。我觉得可能是因为每开启一个线程的时候，都new了一个新的对象，所以操作的不是同一个对象中的i,
+但是这样子，为什么即使输出是不同步，但是也没有每个值都输出三次。
+    XXX.是我没看仔细。对。上面这个想法是正确的，因为每个值全都输出了三次，而我正好开启了三个线程。。这么一看，。上面的问题是我傻逼。
+
+    再次测试：
+        public class NumberTest {
+            private int i = 100;
+            public synchronized void decrement(){
+                i--;
+            }
+            public synchronized int getI(){
+                return i;
+            }
+            public synchronized void print(){
+                System.out.println("当前值：" + i);
+            }
+        }
+        public class RunnableTest implements Runnable {
+            private static NumberTest numberTest = new NumberTest();
+            @Override
+            public void run() {
+                while (numberTest.getI() >1) {
+                    numberTest.decrement();
+                    numberTest.print();
+                }
+            }
+            public static void main(String args[]) {
+                new Thread(new RunnableTest(),"thread1").start();
+                new Thread(new RunnableTest(),"thread2").start();
+                new Thread(new RunnableTest(),"thread2").start();
+            }
+        }
+    这样子是可以保证同步的。
+-------------------------------------------------------------------------------------------------------------
+    上面是对某个方法加锁，下面是对某个代码块加锁
+        public class NumberTest {
+            private int i = 100;
+            public  void decrement(){
+                synchronized(this){
+                    i--;
+                }
+            }
+            public  int getI(){
+                synchronized(this){
+                    return i;
+                }
+            }
+            public synchronized void print(){
+                synchronized(this){
+                    System.out.println("当前值：" + i);
+                }
+            }
+        }
+--------------------------------------------------------------------------------------------------------
+    多线程的原子操作。
+    对于目前的多线程来说，假设CPU是4核的，那么只能进行4个真正意义上的多线程。所以，目前的多线程应该是cpu在多个线程
+间不停地执行、切换，进行的多线程（应该是这样）。那么原子操作就是说，当这个线程没有完成之前，绝对不可以切换线程。
+    下面java中的这个类AtomicInteger可以保证线程的原子性（不过我运行了多次，似乎有时候会有点问题，应该是print的问题。）：
+        public class NumberTest {
+            private AtomicInteger i = new AtomicInteger(100);
+            public  void decrement(){
+                i.decrementAndGet();
+            }
+            public  int getI(){
+                return i.get();
+            }
+            public synchronized void print(){
+                synchronized(this){
+                    System.out.println("当前值：" + i.get());
+                }
+            }
+        }
+--------------------------------------------------------------------------------------------------------
+    线程中断
+    调用Thread的interrupt()方法，当线程处于非阻塞状态，只是改变了中断状态（实验了，线程正常运行），然后返回true。
+    如果此时线程处于阻塞状态，即Thread.sleep()或Object.wait()或Thread.join()，则抛出InterruptException。同时把
+中断状态设置回false，即没有被中断。
+    也就是说，在一个线程中调用interrupt()方法，真正有影响的是wait()，join(),sleep()方法，以及他们的重载方法。
+    通过这个异常，可以进行，比如，当一个线程睡眠时，一旦被中断，抛出异常后，可以在catch中进行相应的处理。
+-------------------------------------------------------------------------------------------------------
+    Thread.join()方法
+    此方法，可以让一个线程等待另一个线程执行结束后再执行.
+    例如，主线程通过调用子线程的join()方法 ，阻塞自己以等待子线程结束。
+    也可以通过此方法将两个交替执行的线程合并成为顺序执行的线程。例如在线程B中调用线程A的Join()方法，直到线程A执行完毕后，
+才会继续执行线程B。
+    上面都是书上说的，让我用人话说一遍。
+    就是如果在一个main(主线程)中开启三个子线程，那么当你执行某个子线程的join()方法后，主线程就会被阻塞，直到这个子线程
+执行结束（发现自己讲得还不如书。。。）。也就是说，通过这个方法，使得调用这个方法的线程，和被调用该方法的线程成一个顺序结构的
+线程，只有被调用该方法的线程执行完毕后，调用该方法的线程才能够继续执行。
+    如下：
+        public static void main(String args[]) throws InterruptedException {
+                Thread thread1 = new Thread(new RunnableTest("线程1"));
+                Thread thread2 = new Thread(new RunnableTest("线程2"));
+                Thread thread3 = new Thread(new RunnableTest("线程3"));
+                thread1.start();
+                thread1.join();
+                thread2.start();
+                thread3.start();
+            }
+    当主线程main调用子线程thread1的join方法后，结果显示为，当thread1执行结束后，main才继续执行下面thread2和3的start()方法。
+    终极一句话，A调用B的join（）方法，相当于一条路上，A，对B说，你他妈的先走。然后A尾随。OK。
+    注意：join方法必须放在start方法后。
+----------------------------------------------------------------------------------------------------------------
+    下面设计一个简单的线程：
+        要求，一本稿子，上面有若干段话，胖子每次讲一段话，每次讲中间隔3s。我让胖子开始讲话，然后开始等胖子讲完，
+如果等的时间大于10S，就把胖子杀了，然后胖子临死前要说一句，我还会回来的。23333
+    如下：
+        public class PangZiTest {
+            private static String says[] = {"1：我是智障", "2:我脑子有糠", "3：前几天临安地震，其实是我。。。", "4：我的爷爷叫郑星", "5:我的爷爷有大吊"};
+            //打印消息 当前线程名 +　消息
+            static void printMessage(String message){
+                String threadName = Thread.currentThread().getName();
+                System.out.format("%s: %s%n",threadName,message);
+            }
+            //胖子讲话线程 类
+            private static class PangZi implements Runnable {
+                @Override
+                public void run() {
+                        for (int i = 0; i < says.length; i++) {
+                            printMessage(says[i]);
+                            try {
+                                Thread.sleep(4000);
+                            } catch (InterruptedException e) {
+                                printMessage("我还会回来的");
+                                return;//如果不写end，抛出异常后会仍会运行，因为异常已被捕获
+                            }
+                        }
+                }
+            }
+            public static void main(String args[]) throws InterruptedException {
+                printMessage("生出一个pangzi");
+                long startTime = System.currentTimeMillis();//开始时间
+                Thread t = new Thread(new PangZi(),"胖子");
+                t.start();
+                while (t.isAlive()){
+                    t.join(1000);
+                    printMessage("胖子你再说");
+                    if((System.currentTimeMillis() - startTime) > 11 * 1000 && t.isAlive()){
+                        printMessage("麻痹的，说的贼慢，滚");
+                        t.interrupt();
+                        t.join();
+                    }
+                }
+                printMessage("END");
+            }
+        }
+--------------------------------------------------------------------------------
+    死锁：线程同时等待彼此，堵塞。
+    **
+     * 死锁 例子
+     * 两个好友要对对方的拥抱作出同样的回应，都是张开双手，当对方拥抱了自己，再拥抱对方。
+     * 当双方同时张开双手，就形成了死锁
+     */
+    public class DeadLockTest {
+        static class Friend{
+            private String name;
+            public String getName() {
+                return name;
+            }
+            public Friend(String name) {
+                this.name = name;
+            }
+            //张开手，作拥抱动作。
+            public synchronized void bow(Friend friend){
+                //%s是参数  %n是换行
+                System.out.format("%s: %s" + "  拥抱我！%n",this.name,friend.getName());
+                friend.bowBack(this);
+                //如下写法也一样是死锁：
+                //friend.bow(this);
+            }
+            //回抱对方
+            public synchronized void bowBack(Friend friend){
+                System.out.format("%s: %s" + " 回抱我!%n",this.name,friend.getName());
+            }
+        }
+
+        public static void main(String [] args){
+            Friend xiaoHua = new Friend("xiaoHua");
+            Friend xiaoMing = new Friend("xiaoMing");
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    xiaoHua.bow(xiaoMing);
+                }
+            }).start();
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    xiaoMing.bow(xiaoHua);
+                }
+            }).start();
+        }
+    }
+    起先我说真的，看不懂。然后百度了下 synchronized。终于明白了。
+    这个例子中，小明调用了自己的bow方法，然后在bow中调用了小花的bowBack()方法，而此时，小花正在执行自己的bow()方法，
+也企图调用小明的bowBack()方法，这样，两个对象就都在等待对方执行完成各自的bow()方法，然后执行被对方调用的bowBack()方法，
+从而陷入了死锁。
+    我又试了下，小明在自己的bow()方法中调用小花的bow()方法是同样效果，因为此时，双方都已经在各自的bow()中。
+
+    synchronized注释方法或代码块的时候，该方法或代码块同时只能被一个线程调用。且，每个类实例对应一把锁，每个synchronized方法
+必须获得调用该方法的类实例的锁才能继续执行。也就是说，一旦一个线程执行了一个类实例的synchronized方法，它就获得了这个类实例的锁。
+    这样同样解释了上面的死锁：小花这个实例的锁被自己的bow()持有，小明实例的锁也被自己的bow()方法持有。所以无法执行各自的bowBack()方法。
+    这种机制确保了同一时刻对于每一个类实例，其所有声明为 synchronized 的成员函数中至多只有一个处于可执行状态（因为至多只有一个能够
+获得该类实例对应的锁），从而有效避免了类成员变量的访问冲突（只要所有可能访问类成员变量的方法均被声明为 synchronized）。
+    不光是类实例，每一个类也对应一把锁，这样我们也可将类的静态成员函数声明为 synchronized ，以控制其对类的静态成员变量的访问。
+
+    当一个线程访问object的一个synchronized(this)同步代码块时，另一个线程仍然可以访问该object中的非synchronized(this)同步代码块。
+    对于synchronized(object)，线程进入，则获得该对象锁，那么别的线程在该类所有对象上的任何操作都不能进行.而且这是没有效率的。
+    试了下，使用synchronized(this)代码块，这个时候，其他线程再调用this这个实例的其他synchronized方法，是会被阻塞的，但是如果
+调用非synchronized方法，则不会阻塞.
+    当一个线程访问object的一个synchronized(this)同步代码块时，其他线程对object中所有其它synchronized(this)同步代码块的访问将被阻塞。
+    （上面的文字有些是复制的，有些是自己实验了写的，但基本上 ——字字珠玑）
+--------------------------------------------------------------------------------------------------------------------
+    如下代码：
+        public class DeadLockTest {
+            static class Friend{
+                private String name;
+                private int age;
+                public  void setName1(String name) {
+                    synchronized(this.name){
+                        this.name = name;
+                    }
+                }
+                public synchronized void setName2(String name) {
+                        this.name = name;
+                }
+                public synchronized String getName() {
+                    return name;
+                }
+                public Friend(String name) {
+                    this.name = name;
+                }
+                //张开手，作拥抱动作。
+                public  void bow(Friend friend) throws InterruptedException {
+                    synchronized(this.name){
+                        System.out.format("%s: %s" + "  拥抱我！%n",this.name,friend.getName());
+                        Thread.sleep(10000);
+                    }
+                }
+                //回抱对方
+                public synchronized void setNameTest(Friend friend){
+                    friend.setName1("100");
+                    System.out.println("setName1执行完毕");
+                    friend.setName2("100");
+                    System.out.println("setName2执行完毕");
+                }
+            }
+            public static void main(String [] args) throws InterruptedException {
+                Friend xiaoHua = new Friend("xiaoHua");
+                Friend xiaoMing = new Friend("xiaoMing");
+                Thread thread1 = new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            xiaoHua.bow(xiaoMing);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                });
+                Thread thread2 = new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        xiaoMing.setNameTest(xiaoHua);
+                    }
+                });
+                thread1.start();
+                thread1.join(1000);
+                thread2.start();
+            }
+        }
+        我解释下：上面是小花执行自己的bow()方法，并且睡眠10S，注意，此时该线程获取的锁只是小花.name的锁。
+在此期间，小明执行了自己的setNameTest()方法。在该方法中，依次执行小花的setName1()和setName2()方法.
+    注意，小花的setName1的同步代码块获取的也是小花.name的锁。而小花的setName2同步代码块获取的是小花这个实例的锁。
+    当setNameTest()方法中，先执行setName1方法，也就是试图获取小花.name的锁的时候，该线程被阻塞了。
+    而当setNameTest()方法中，先执行setName2方法，也就是试图获取小花实例的锁的时候，成功获取到了，并且接下来执行setName2()
+获取小花.name的锁的时候,也成功获取到了。（我本以为是类实例的锁的优先级高于类实例成员变量的锁的优先级，此时bow()应该是被阻塞了的）
+    但是刚才试了下，发现，当setName2获取到小花实例的锁后，小花.bow()方法仍在运行，且setName2可以修改name，且当setName2修改了name后，
+bow()中的name也就发生了变化。由此，应该可以得出，类实例的锁和类成员变量的锁可以由多个线程同时分别拥有，不会阻塞，且类实例的锁的权限大于
+类成员变量的锁，拥有类实例的锁的线程，可以改变已被别的线程锁定了的类成员变量，且会马上发生变化。
+    还有一个测试的结果，就是如果一个对象的锁已经被线程A获取，但线程B同样可以获取到那个对象的成员变量的锁，并修改其成员变量(任意成员变量，可以不是获取到的锁的那个)。
+------------------------------------------------------------------------------------------------------------
+2017年4月17日 12:43:39
+    饥饿，线程一直不能访问共享资源且无法执行，一般发生在对象锁长时间被其他线程霸占，或者优先级调度中，一直被高优先级的线程霸占锁。
+    活锁，一个线程不断的去询问另外一个线程的执行结果，而这个“另外的线程”有不断去询问另外的线程的处理结果，就会发生活锁。
+    避免饥饿和活锁可以依靠保护块——其原理是，如果多个线程需要做某个事，那么这个事情是有某种条件的，那么在做这个事情之前一直循环这个条件，
+重点是，“一直循环这个条件”，而不是简单地判断条件是否成立。更加高效率的做法是，使用Object.wait()方法将当前线程挂起，直到另一线程发起通知。
+尽管通知的事件不一定是当前线程等待的事件。（一定要在循环调用wait()事件，不要想当然地认为线程被唤醒后，循环条件一定发生了变化）
+    注意，这个循环一定要处于synchronized中。一个线程调用X.wait()时，这个线程必须拥有x的锁（否则会抛出异常）
+    wait()方法是，释放锁，并挂起。等待notifyAll通知。notify()只会唤醒被关起中的锁中的随机的某一个。
+
+    写了一个观察者（生产者）模式的小例子。包com.zx.producer,drop对象相当于阻塞队列.
+    刚才瞄了下CopyOnWriteArrayList类的源码。发现没有一个synchronized。不过有一个 重入锁对象，上午车上看书的时候瞄到过这个对象。
+--------------------------------------------------------------------------------------------------------------
+2017年4月17日 15:35:25
+    ThreadLocal<T>类可以创造线程私有的变量，只允许当前线程读写。set()方法可以设置泛型的值，get()方法可以获取泛型的值。
+    想要让所有线程使用的ThreadLocal<T>类有默认的初始值，需要
+            ThreadLocal<String> str = new ThreadLocal<String>(){
+                        @Override
+                        protected String initialValue() {
+                            return "init";
+                        }
+                    };
+    重写它的initialValue()方法.
+
+    ThreadLocal<T>还有一个子类 InheritableThreadLocal<T>,这个类对于子线程来说，是共享的。
+    简单地说，当main()创建了两个线程，然后给这两个线程附上自己创建的InheritableThreadLocal,如果此时main()的这个itl是100,
+那么子线程获取到的itl也是100。而如果是使用ThreadLocal，子线程获取的会是null。
+-----------------------------------------------------------------------------------------------------------
+Compare and swap(比较且交换)CAS算法。是基于cpu硬件的。
+    使用情况，如果是非公平锁，每个线程进来都会尝试占有锁，这个尝试过程就是比较且交换。
+    如果锁是期望的值（未被占用），就将锁变成占用状态，并返回true，否则，什么都不做。
+    java.util.concurrent.atomic包中的一系列原子变量的底层实现就是cpu提供的cas操作。比起自己实现效率快得多。
+    原子操作，即该次操作不会被打断，直到执行成功。（事务中也有原子性）。就不会发生多线程数据不一致的情况
+    自己实现如下：
+        boolean lock = false;
+        public synchronized boolean cas(){
+            //如果没上锁,获取锁，且返回true
+            if(!lock){
+                lock = true;
+                return true;
+            }
+            return false;
+        }
+    atomic实现
+        AtomicBoolean lock = new AtomicBoolean(false);
+        public boolean cas(){
+            return lock.compareAndSet(false,true);
+        }
+--------------------------------------------------------------------------------------------------------------------
+2017年4月18日 21:39:19
+    AtomicReference<V>这个类有点奇怪，我把Integer当作泛型，创建了一个这个类的实例，然后线程是，循环100次，将这个实例的值，从100
+循环到0。然后开两个线程跑，看看能不能同步，结果，是一个线程跑完之后，另一个线程才开始跑。
+    还有一点。网上看见的，这个类的set()方法，不是原子的。。。其他都是原子的。但是有个compareAndSet(V expect, V update)。
+方法，可以将值替换成想要的值（如果值是期望的话。。有点绕）.
+    然后我把AtomicReference换成了普通的Integer，就成了期望的结果，两个线程一起跑，很乱。。
+
+    嘿嘿。我果然还是聪明，把线程增加到十多个，结果果然就乱了，之前的结果应该是因为这个操作是原子的，然后，另一个线程一直抢不到cpu，
+所以才会发生和串行一样的执行结果吧——私以为。
+    原子类，只能保证每个方法的操作是原子操作。但无法保证不发生线程竞态，以及两个原子操作之间，别的线程对值的操作。
+----------------------------------------------------------------------------------------------------
+    重入：当线程已经获取到某个对象的锁之后，可以再次获取。重入的一种实现方法是，为每个锁关联计数器和持有人，当线程A获取到锁后，
+计数器+1，持有人为A，此时，其他线程无法获取该锁，而A可以再次获取，然后计数器再+1，如果A释放一层锁，就-1，直到计数器为0，释放锁。
+    假设A类，B类继承A类。A类有方法a(),是同步方法，B类重写A类a()方法，但是在方法中，super.a()，如果没有重入，就死锁了。
+----------------------------------------------------------------------------------------------------------------
+
+
+    2017年4月19日 21:01:34 对了，先记下，等下还要看下happen-before
+    ExecutorService 执行器服务接口，通过 Executors类 创建实例。主要的实现类如下：
+        1.newCachedThreadPool：可根据需要创建新线程的线程池，只会重用空闲并且可用的线程。一般不用它。可能会造成内存溢出。
+        2.newWorkStealingPool:创建ForkJoinPool类型的线程池。将一个大任务分割成若干个子任务，并且合并子任务执行的结果。(java8)
+             ForkJoinPool(分叉、连接线程池)：
+                    work-stealing 工作窃取算法：指某个线程从其他队列里窃取任务来执行。
+                        算法使用场景：将一个比较大的任务分成若干相互不依赖的子任务，为了减少线程间的竞争，所以把这些子任务放到不同的队列，
+                    为每个队列创建一个单独的线程来执行队列中的任务，线程和队列一一对应。当有线程将自己的任务队列执行完毕后，可以从从其他
+                    线程的队列窃取任务来执行。为了减少去窃取任务的线程和被窃取任务的线程之间的竞争，通常使用双端队列。被窃取线程永远从头部获取
+                    任务，去窃取任务线程从尾部获取。
+                        优点：减少线程间的竞争。缺点是，某些情况下还存在竞争，比如双端队列中只有一个任务的时候。并且还消耗了更多的系统资源，来创建
+                    多个线程和多个双端队列。
+             ForkJoinTask是一个抽象类
+                 RecursiveAction:ForkJoinTask抽象子类，用于返回没有结果的任务
+                 RecursiveAction：抽象子类，用于返回有结果的任务。
+             写了一个ForkJoinPool的例子。fork()是分配子任务,应该相当于执行线程，join()是获取执行结果
+        3.newSingleThreadExecutor:一个单线程化的线程池，用唯一的工作线程执行任务，确保所有任务按指定顺序执行（FIFO,LIFO,优先级）。
+            试了下，其他线程池执行线程的确不是依次的。
+        4.newFixedThreadPool:创建一个可重用的固定线程数的线程池，以共享的无界队列（不设置初始size的队列）方式来运行这些线程。
+            能同时运行的个数就是new它时设定的个数。其他线程想要运行，必须等运行的线程数于设定值执行结束，才能再次调用它的execute(否则不运行)
+        5.newScheduledThreadPool:创建一个可以重复执行任务的线程池，并可以指定任务的间隔和延迟时间。
+            方法如下：
+                1.schedule(Callable 线程,long 延时时间,TimeUnit 时间单位) 延时执行一次线程
+                2.schedule(Runnable,long,TimeUnit)同上，不过返回的future.get()返回的是NUll
+                3.scheduleAtFixedRate(Runnable,long 首次延时时间,long 周期间隔时间,TimeUnit) 周期执行任务，不受每次任务执行时间的影响，到时就执行。
+                4.scheduleWithFixedDelay(Runnable,long,long,timeunit) 同上，不过是每次任务执行完了在开始计算周期间隔时间。
+        6.newSingleThreadScheduledPool:只有一个线程，可以重复定时执任务的线程池。
+
+    也可以自己直接 new ThreadPoolExecutor();
+        int corePoolSize = 5;//核心线程大小
+                int maxPoolSize = 10;//最大线程数
+                long keepAliveTime = 5000;
+                ExecutorService executorService = new ThreadPoolExecutor(
+                        corePoolSize,
+                        maxPoolSize,
+                        keepAliveTime,
+                        TimeUnit.MILLISECONDS,
+                        new LinkedBlockingQueue<Runnable>()
+                );
+        其中，线程放入的优先级是   核心线程  --》 队列  --》 最大线程 --》handle类
+        也就是，先将核心线程塞满，超过后放入队列，队列满了就多开启几个线程，让线程数达到最大线程--》再超出就使用handle类处理。
+
+    ExecutorService接口提供如下方法：
+        1.execute(Runnable):普通的执行一个线程。
+        2.submit(Runnable):会返回一个future对象，可以通过该对象查看线程适度执行完毕，如果正确执行(捕获了异常也算) future.get()返回 null
+            只要是使用Runnable接口，就算是返回Future对象，使用future.get()方法，获取到的也只会是null
+        3.submit(Callable):与submit(Runnable)类似。Runnable.run()执行异步。Callable.call()执行异步，返回执行结果<T>(future)
+        4.invokeAny():有一类线程执行方式如下：启动若干个独立的线程去计算一个结果，当任意一个线程得到结果后，立刻终止所有线程。
+            这个方法就是为此设计，参数是一个List,list中的每个元素必须实现Callable接口。功能是依次启动list中的线程，并将第一个得到的
+            结果作为返回值，然后立刻终止所有的线程。invokeAny是一个同步方法。
+        5.invokeAll():将所有Callable对象都执行，并且返回一个list<Future>对象。它也是同步的。
+        6.shutdown()：调用后，所有线程都会停止运行，但不是立即的，而是等到已提交的任务才会停止，在执行当前任务时，不再接受新的任务。
+        7.shutdownNow():立即停止所有线程。当线程处在while(true)中，无法停止
+        9.awaitTermination():阻塞自己，等待所有子线程执行完毕
+
+    Future接口：
+        表示一个异步计算的结果。提供了检查计算事都完毕的方法，等待计算完毕的方法，返回计算结果的方法。当计算完毕的时候，可以用get()
+        获取计算结果，不过它是一直阻塞的，知道有结果返回。cancel()可以取消任务执行，也有判断任务是否被取消的方法。如果不需要返回结果，
+        只需要一个可以取消的任务，可以声明Future<?>并在Callable中返回null.
+        有一个isDone()方法，可以判断当前它是否完成。
+        FutureTask Future实现类: 它同时继承Future接口和Runnable接口。
+
+    Semaphore类：信号量。线程同步辅助类，维护当前访问自身的线程个数，例如，实现一个文件允许的并发访问数。
+        acquire():从信号量中获取一个许可，在获得之前一直被阻塞。否则线程被中断。
+        release():释放一个许可。
+        availablePermits():返回当前可用的信号量数目。
+        hasQueuedThreads():查询当前是否有线程在等待获取。
+        单个信号量的限制可以实现互斥锁，解决死锁问题。
+
+    下面自定义一个线程执行器。。就懒得写了。
+        思想就是 一个Task类，继承Runnable接口，多加setId和getId的方法。
+        一个service接口，方法就写的和其他ExecutorService一样就好了。
+        然后一个service实现类，继承一个ExecutorService类，且实现上面那个service接口。
+----------------------------------------------------------------------------------------------------------------------
+
+2017年4月21日 11:37:01
+    --并发集合
+
+
