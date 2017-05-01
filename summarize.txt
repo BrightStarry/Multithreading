@@ -431,7 +431,8 @@ Compare and swap(比较且交换)CAS算法。是基于cpu硬件的。
 
     2017年4月19日 21:01:34 对了，先记下，等下还要看下happen-before
     ExecutorService 执行器服务接口，通过 Executors类 创建实例。主要的实现类如下：
-        1.newCachedThreadPool：可根据需要创建新线程的线程池，只会重用空闲并且可用的线程。一般不用它。可能会造成内存溢出。
+        1.newCachedThreadPool：可根据需要创建新线程的线程池，只会重用空闲并且可用的线程。不限制最大线程数。
+            若有空闲线程，则用空闲线程执行任务；若没有，则创建新的线程。空闲任务默认60s自动回收。一般不用它。可能会造成内存溢出。
         2.newWorkStealingPool:创建ForkJoinPool类型的线程池。将一个大任务分割成若干个子任务，并且合并子任务执行的结果。(java8)
              ForkJoinPool(分叉、连接线程池)：
                     work-stealing 工作窃取算法：指某个线程从其他队列里窃取任务来执行。
@@ -449,7 +450,7 @@ Compare and swap(比较且交换)CAS算法。是基于cpu硬件的。
             试了下，其他线程池执行线程的确不是依次的。
         4.newFixedThreadPool:创建一个可重用的固定线程数的线程池，以共享的无界队列（不设置初始size的队列）方式来运行这些线程。
             能同时运行的个数就是new它时设定的个数。其他线程想要运行，必须等运行的线程数于设定值执行结束，才能再次调用它的execute(否则不运行)
-        5.newScheduledThreadPool:创建一个可以重复执行任务的线程池，并可以指定任务的间隔和延迟时间。
+        5.newScheduledThreadPool:创建一个可以重复执行任务的线程池，并可以指定任务的间隔和延迟时间。也是有固定的数量的线程池。类似Timer
             方法如下：
                 1.schedule(Callable 线程,long 延时时间,TimeUnit 时间单位) 延时执行一次线程
                 2.schedule(Runnable,long,TimeUnit)同上，不过返回的future.get()返回的是NUll
@@ -457,19 +458,40 @@ Compare and swap(比较且交换)CAS算法。是基于cpu硬件的。
                 4.scheduleWithFixedDelay(Runnable,long,long,timeunit) 同上，不过是每次任务执行完了在开始计算周期间隔时间。
         6.newSingleThreadScheduledPool:只有一个线程，可以重复定时执任务的线程池。
 
-    也可以自己直接 new ThreadPoolExecutor();
-        int corePoolSize = 5;//核心线程大小
+    也可以自己直接 new ThreadPoolExecutor()  上面所有的方法，基本上都是new这个线程池对象，传递了不同的参数而已。
+                int corePoolSize = 5;//核心线程大小
                 int maxPoolSize = 10;//最大线程数
                 long keepAliveTime = 5000;
                 ExecutorService executorService = new ThreadPoolExecutor(
-                        corePoolSize,
-                        maxPoolSize,
-                        keepAliveTime,
-                        TimeUnit.MILLISECONDS,
-                        new LinkedBlockingQueue<Runnable>()
+                        corePoolSize,//核心线程数
+                        maxPoolSize,//最大线程数
+                        keepAliveTime,//空闲线程存活时间
+                        TimeUnit.MILLISECONDS,//存活时间单位
+                        Queue<Runnable>()//队列
+                        ThreadFactory //线程工厂
+                        //handle类d,当核心线程、队列、最大线程都满了，就使用这个类处理任务，可以使用JDK提供的拒绝策略，也可以自定义拒绝策略。
+                        RejectedExecutorHandler handler
+
                 );
-        其中，线程放入的优先级是   核心线程  --》 队列  --》 最大线程 --》handle类
-        也就是，先将核心线程塞满，超过后放入队列，队列满了就多开启几个线程，让线程数达到最大线程--》再超出就使用handle类处理。
+                关于队列这个参数：
+                    使用有界队列时，优先级如下：
+                        其中，线程放入的优先级是   核心线程  --》 队列  --》 最大线程 --》handle类
+                        也就是，先将核心线程塞满，超过后放入队列，队列满了就多开启几个线程，让线程数达到最大线程--》再超出就使用handle类处理。
+                        添加一个新的任务时，如果没有指定handle类，而核心线程、队列、最大线程又都满了，则抛出Reject异常。
+                    使用无界队列时：
+                        除非系统资源耗尽，否则不会有任务创建失败的情况。
+                        而且最大线程数相当于没有，如果核心线程数满了，新任务就会存入队列，直到系统资源耗尽。
+
+    JDK拒绝策略：（当任务满了需要拒绝的策略）
+        AbortPolicy:直接抛出异常，系统继续正常工作。
+        CallerRunsPolicy:只要线程没有关闭，该策略直接在调用者线程中，运行当前被拒绝的任务.
+        DiscardOldestPolicy:丢弃最老的一个请求，尝试再次提交当前任务。当前任务替换掉最老的未执行的任务。
+        DiscardPolicy:丢弃无法处理的任务，不给予任何处理。
+        如果需要自定义拒绝策略，可以实现RejectedExecutionHandler接口：
+            在需要重写的rejectedExecution(Runnable runnable,ThreadPoolExecutor executor)
+            有需要执行的任务和当前的线程池对象。
+            一般的自定义拒绝策略都是记录日志，而不是另外存到缓存中。因为如果内存够，倒不如不用拒绝，
+            直接扩充队列；要是内存不够了，就是想存进缓存都做不到了。
 
     ExecutorService接口提供如下方法：
         1.execute(Runnable):普通的执行一个线程。
@@ -489,14 +511,22 @@ Compare and swap(比较且交换)CAS算法。是基于cpu硬件的。
         获取计算结果，不过它是一直阻塞的，知道有结果返回。cancel()可以取消任务执行，也有判断任务是否被取消的方法。如果不需要返回结果，
         只需要一个可以取消的任务，可以声明Future<?>并在Callable中返回null.
         有一个isDone()方法，可以判断当前它是否完成。
+        如果调用get()方法时，线程还没有结束，返回对应的值，那么调用get()方法的线程就会阻塞。
         FutureTask Future实现类: 它同时继承Future接口和Runnable接口。
+            写了个future的简单实现。
+            主函数（Main类）创建 请求对象(FutureClient类)（类似XMLHttpRequest），创建请求参数，发起请求（client.request()方法）（类似Ajax）.
+            futureClient.request()方法：创建一个代理对象(FutureData)，创建新的线程，发起异步请求，返回一个代理对象（返回时是空的）。
+            发起异步请求的步骤是 创建一个真实返回的对象(RealData),创建时，这个对象就自己去查询数据了（相当于这个新的线程被阻塞了，反正就是去做事了）。
+            最后调用代理对象的getResult方法，在这个方法中，调用真实对象的getResult方法，如果，此时真实对象获取到了数据，那么会直接返回，
+            如果没有，那么这个getResult()会被阻塞，直到对象获取完毕。
 
-    Semaphore类：信号量。线程同步辅助类，维护当前访问自身的线程个数，例如，实现一个文件允许的并发访问数。
+    Semaphore类：信号量。线程同步辅助类，维护当前访问自身的线程个数，例如，实现一个文件允许的并发访问数。相当于分配出去x把锁。
         acquire():从信号量中获取一个许可，在获得之前一直被阻塞。否则线程被中断。
         release():释放一个许可。
         availablePermits():返回当前可用的信号量数目。
         hasQueuedThreads():查询当前是否有线程在等待获取。
         单个信号量的限制可以实现互斥锁，解决死锁问题。
+        可以使用它进行限流。
 
     下面自定义一个线程执行器。。就懒得写了。
         思想就是 一个Task类，继承Runnable接口，多加setId和getId的方法。
@@ -548,24 +578,6 @@ Compare and swap(比较且交换)CAS算法。是基于cpu硬件的。
 
         ConcurrentMap：并发map对象，被ConcurrentHashMap实现。ConcurrentHashMap读写时不会锁住整个map，只会锁住要写的那部分。
 
-        CountDownLatch:一个辅助类，和join()类似，但它用来管理一组线程。有一个初始值，就是计数器。
-            其原理是：设定一组计数器，每个线程完成的时候，就将计数器-1，如果计数器为0，就释放锁，线程就能继续进行.
-            功能也就是，管理一组子线程，让它成为每个线程的成员变量，然后在子线程的构造函数中将它作为参数传给子线程。
-            countDown()方法，线程调用该方法，可以将计数器-1.
-            使用await()方法，阻塞自己，等待所有管理的线程执行完毕(计数器为0时)释放。可以设定等待时间。
-        CyclicBarrier:屏障（可以设置多个）,多个线程独立运行，完成任务的线程就等待其他线程，当所有线程完成任务后，所有线程再一起运行。
-            可以设置屏障拦截的线程个数，当达到X个数，就释放屏障。也可以设置等待的超时时间。
-            还可以设置屏障释放时执行的线程，也就是释放线程时，执行另外的线程。
-            调用它的reset()方法还可以继续使用，countDownLatch是一次性的。
-        CountDownLatch 和 CyclicBarrier区别：
-            countDownLatch：一个线程（或多个），等待另外N个线程完成某件事情之后进行。
-            cyclicBarrier:N个线程相互等待，任何一个线程完成之前，其他线程必须相互等待。而且它可以多次在某个点等待。
-
-        ThreadLocalRandom:线程安全的随机数.
-            先调用ThreadLocalRandom.current()，然后调用.nextInt(x,y)生成随机数,大于等于x,小于Y。
-
-        Exchanger:在两个线程间交换数据，且只能是两个线程。它提供了一个同步点。在这个同步点，两个线程可以交换数据。
-            通过Exchange()方法提供数据给其他线程，并接受其他线程提供的数据。
 
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -576,8 +588,19 @@ Compare and swap(比较且交换)CAS算法。是基于cpu硬件的。
         lock():获取锁，如果锁已被其他线程获取，阻塞。
         tryLock():获取锁，如果锁没被其他线程获取，返回true，并获取锁。否则返回false,也可以等待一定的时间。
         unLock()：释放锁。
+        isFair()；是否是公平锁。
+        isLocked():是否锁定.
+        getHoldCount():获取当前线程保持此锁的个数，也就是调用lock()且未调用unLock()的次数（lock-unlock）。
+        lockInterruptibly():优先响应中断的锁。
+        getQueueLength():返回正在等待获取该锁的线程数。
+        getWaitQueueLength():返回正在等待被唤醒的线程数
+        hasQueuedThread(Thread):查询指定线程是否在等待此锁。
+        hasQueuedThreads():查询是否有线程在等待此锁。
+        hasWaiters():查询是否有正在等待被唤醒的线程。
+        一般使用这些锁，都需要try/finally，try中获取锁，finally中释放锁。
         ReentrantLock:可重入锁，互斥锁。
             支持设定成公平（先到先得）或非公平（每个锁都尝试获取，具体哪个获取到看运气）锁，构造函数中传入（true）为公平锁
+            默认为非公平。非公平效率高、
             假设获取了x次锁，就需要调用x次unLock()方法释放锁。（之前的死锁例子可以通过它避免。）
 
         ReadWriteLock接口,
@@ -588,10 +611,10 @@ Compare and swap(比较且交换)CAS算法。是基于cpu硬件的。
             如果写入操作 比较多，那么这个锁得不偿失，因为读写锁本身就比写入锁复杂。
             它允许写入锁降级（重入）为读取锁（无法升级）：
                 实现方式是，先获取写入锁，然后获取读取锁，最后释放写入锁。
-                不支持升级是因为数据可见性的考虑。假如有先获取了读取锁，然后获取写入锁，然后释放写入锁，那么在释放读取锁之前，
-                如果其他线程获取了读取锁，并修改了数据，就不可见了。
+                不支持升级是因为数据可见性的考虑。假如有先获取了读取锁，然后获取写入锁，在这个时候，由于读取锁是可以公用的，其他线程可能
+                也获取着读锁，如果此时这个获取到写锁的线程修改了数据，对于其他读取锁，数据就不可见了。（这个原因是我自己的理解。）
 
-            Condition：条件
+            Condition：条件 lock.newCondition()方法创建
                 将Object的监听器方法（wait，notify,notifyAll）分解成不同的对象，以便通过这些对象于任意的Lock实现组合使用。
             为每个对象提供多个set（wait-set）方法。其中。lock替代了synchronized的使用,Condition替代了监听器方法的使用。
                 条件为线程提供了一个含义，以便在某个状态条件现在可能true的另一个线程通知它之前，一直挂起该线程。
@@ -600,6 +623,7 @@ Compare and swap(比较且交换)CAS算法。是基于cpu硬件的。
                     await替代wait，signal替代notify,signalAll替代notifyAll。
                 然后它是被绑定到Lock上的，要创建一个Lock的Condition要使用newCondition()方法。
                 它和普通的监听器的区别就在于，它可以为多个线程间建立不同的Condition。
+                也就是一个lock可以创建多个Condition。
                 差不多就是A线程使用ConditionA.await()来阻塞自己，B线程使用ConditionB.await()来阻塞自己，
                 C线程使用ConditionC.await()来阻塞自己，那么在A线程中调用ConditionB.signal()，就肯定会唤醒
                 B线程，而不是唤醒C线程，而对于普通的notify()方法来说，只会唤醒任意一个线程。
@@ -634,4 +658,36 @@ Compare and swap(比较且交换)CAS算法。是基于cpu硬件的。
 
     --ConcurrentLinkedQueue:
         高并发场景下的无锁队列，性能好于BlockQueue,基于链接节点的无界的线程安全的队列。FIFO，不允许NULL元素。
-    --BlockingQueue:
+    --BlockingQueue:上面已经写了。补充上去了。
+-------------------------------------------------------------------------------------
+    Master-Worker:常用的工作模式，核心思想是由两类进程协作工作：Master进程和Worker进程，
+        Master负责接收和分配任务，Worker负责处理子任务。当各个Worker子进程处理完后，会将结果返回给
+        Master进程。也就是将一个大任务分解成若干个小任务，并行执行。（应该就是forkJoin模式）
+    已经写了一个小例子。不过这样看来，这个模式好像不同于fork-join。
+    这个模式是多个子线程并发从所有任务队列中获取随机任务，然后执行。
+    而forkJoin模式是，根据任务规模，动态分配子线程，然后每个线程执行自己分配到的任务。
+--------------------------------------------------------------------------------------------
+    Concurrent.util:
+        CountDownLatch:一个辅助类，和join()类似，但它用来管理一组线程。有一个初始值，就是计数器。
+                    其原理是：设定一组计数器，每个线程完成的时候，就将计数器-1，如果计数器为0，就释放锁，线程就能继续进行.
+                    功能也就是，管理一组子线程，让它成为每个线程的成员变量，然后在子线程的构造函数中将它作为参数传给子线程。
+                    countDown()方法，线程调用该方法，可以将计数器-1.
+                    使用await()方法，阻塞自己，等待所有管理的线程执行完毕(计数器为0时)释放。可以设定等待时间。
+
+        CyclicBarrier:屏障（可以设置多个）,多个线程独立运行，完成任务的线程就等待其他线程，当所有线程完成任务后，所有线程再一起运行。
+                    可以设置屏障拦截的线程个数，当达到X个数，就释放屏障。也可以设置等待的超时时间。
+                    还可以设置屏障释放时执行的线程，也就是释放线程时，执行另外的线程。
+                    假设它的初始化线程个数是2，那么当A线程调用CyclicBarrier.await()方法时，阻塞自己等待，
+                        当B线程也调用await(),则，两个线程都可以继续执行了。
+                    调用它的reset()方法还可以继续使用，countDownLatch是一次性的。
+
+        CountDownLatch 和 CyclicBarrier区别：
+                    countDownLatch：一个线程（或多个），等待另外N个线程完成某件事情之后进行。
+                    cyclicBarrier:N个线程相互等待，任何一个线程完成之前，其他线程必须相互等待。而且它可以多次在某个点等待。
+
+        ThreadLocalRandom:线程安全的随机数.
+                    先调用ThreadLocalRandom.current()，然后调用.nextInt(x,y)生成随机数,大于等于x,小于Y。
+
+        Exchanger:在两个线程间交换数据，且只能是两个线程。它提供了一个同步点。在这个同步点，两个线程可以交换数据。
+                    通过Exchange()方法提供数据给其他线程，并接受其他线程提供的数据。
+-------------------------------------------------------------------------------------
