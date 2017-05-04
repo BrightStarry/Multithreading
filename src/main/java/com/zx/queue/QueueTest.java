@@ -5,18 +5,11 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
-    阻塞队列测试
- */
-public class QueueTest {
-
-}
-
-/**
  *  阻塞队列测试
  *  直接一起测试了。 最终的结果和预期的一样。 如果只是插入和取出，
  *  链表队列（有界）　>  链表队列（无界） >  数组队列
  */
-class ArrayBlockingQueueTest{
+public class QueueTest{
 
     public static void main(String[] args) {
         test();
