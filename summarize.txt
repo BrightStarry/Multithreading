@@ -30,6 +30,24 @@ FutureTask表示一个异步运算的任务。FutureTask里面可以传入一个
 因为线程阻塞涉及到用户态和内核态切换的问题。既然synchronized里面的代码执行地非常快，不妨让等待锁的线程不要被阻塞，
 而是在synchronized的边界做忙循环，这就是自旋。如果做了多次忙循环发现还没有获得锁，再阻塞，这样可能是一种更好的策略。
 -----------------
+异常处理！！！！！！！！！！
+http://www.blogjava.net/xylz/archive/2013/08/05/402405.html
+单个线程中的异常需要自己处理掉。无法被main方法处理，即使该线程run()内抛出RunException()，main()中使用了catch，
+也是无法捕获的。
+
+可以给Thread指定默认的异常处理类。详见ThreadExceptionHandlerTest类
+
+而在线程池中却比较特殊。默认情况下，线程池 java.util.concurrent.ThreadPoolExecutor 会Catch住所有异常，
+当任务执行完成(java.util.concurrent.ExecutorService.submit(Callable))获取其结果 时(java.util.concurrent.Future.get())
+会抛出此RuntimeException。
+
+其中 ExecutionException 异常即是java.lang.Runnable 或者 java.util.concurrent.Callable 抛出的异常。
+也就是说，线程池在执行任务时捕获了所有异常，并将此异常加入结果中。这样一来线程池中的所有线程都将无法捕获到抛出的异常。 从而无法通过设置线程的默认捕获方法拦截的错误异常。
+也不同通过自定义线程来完成异常的拦截。
+
+
+
+----------
     synchronized关键字是不能继承的（也就是子类中的父类的方法，默认并没有synchronized）
     Thread.currentThread().getName()显示当前线程的名字
     sleep()不会释放锁
@@ -459,6 +477,7 @@ Compare and swap(比较且交换)CAS算法。是基于cpu硬件的。 CAS是乐�
     ExecutorService 执行器服务接口，通过 Executors类 创建实例。主要的实现类如下：
         1.newCachedThreadPool：可根据需要创建新线程的线程池，只会重用空闲并且可用的线程。不限制最大线程数。
             若有空闲线程，则用空闲线程执行任务；若没有，则创建新的线程。空闲任务默认60s自动回收。一般不用它。可能会造成内存溢出。
+            (可以给他设置一个上限，就类似fixed了，差别应该是，这个可以复用创建好的线程类)
         2.newWorkStealingPool:创建ForkJoinPool类型的线程池。将一个大任务分割成若干个子任务，并且合并子任务执行的结果。(java8)
              ForkJoinPool(分叉、连接线程池)：
                     work-stealing 工作窃取算法：指某个线程从其他队列里窃取任务来执行。
