@@ -820,6 +820,10 @@ Compare and swap(比较且交换)CAS算法。是基于cpu硬件的。 CAS是乐�
         如果只是多个生产者消费者，不需要Disruptor.
     这个框架也可以进行复杂的操作，例如P1生产出，给C1、C2消费，C1、C2消费完成后C3消费。
 
+    ！！！这个框架可以实现分布式事务，也就是从队列中取出任务，然后，由两个handler同时处理，只有这两个handle都成功，才能执行下一个handler。
+        那么这两个handler可以同时调用soa，如果成功，返回ok，失败，返回falid。然后这两个都执行完毕后，再下一个handler中，就可以判断是否都执行成功，
+        然后进行提交或回滚。
+
 
 
 ------------------------------------------------------------------------
@@ -832,3 +836,35 @@ GC就是典型的守护进程，当jvm中所有线程停止后，GC也就停止�
 可以通过线程.setPriority()方法设置一个线程的优先级，在1-10之间，如果一个8优先级的线程中开启了一个子线程，那么该子线程的优先级也是8.
 优先级无法一定确保某个线程一定先执行于某个线程。
 
+
+---------------------------------
+    异常处理 http://www.blogjava.net/xylz/archive/2013/08/05/402405.html
+        通常java.lang.Thread对象运行设置一个默认的异常处理方法：
+            java.lang.Thread.setDefaultUncaughtExceptionHandler(UncaughtExceptionHandler)
+            当然，我们可以覆盖此默认实现，只需要一个自定义的java.lang.Thread.UncaughtExceptionHandler接口实现即可。
+
+        而在线程池中却比较特殊。默认情况下，线程池 java.util.concurrent.ThreadPoolExecutor 会Catch住所有异常，
+            当任务执行完成(java.util.concurrent.ExecutorService.submit(Callable))获取其结果时，
+            (java.util.concurrent.Future.get())会抛出此RuntimeException。
+
+    java.util.concurrent.ThreadPoolExecutor 预留了一个方法，运行在任务执行完毕进行扩展（当然也预留一个protected方法beforeExecute(Thread t, Runnable r)）：
+        protected void afterExecute(Runnable r, Throwable t) { }
+        此方法的默认实现为空，这样我们就可以通过继承或者覆盖ThreadPoolExecutor 来达到自定义的错误处理。
+
+--------------------------------
+2017年12月9日 22:11:14
+<<java并发编程实战>>
+* P32 volatile:对对象的写入操作不依赖对象的当前值,或确保每次只有单线程操作该变量时.可以使用它.
+
+* 使用final保证某个对象的线程安全
+>
+    //缓存定义,默认为final,空
+    public volatile final Cache cache = new Cache(null,null);
+
+    //存入缓存
+    cache = new Cache(1,1);
+
+    这种情况下.缓存是线程安全的,每次读取,都一定会取出缓存的最新值.
+    首先final保证每次只有单个线程改变了cache,其次,volatile保证了可见性
+
+>

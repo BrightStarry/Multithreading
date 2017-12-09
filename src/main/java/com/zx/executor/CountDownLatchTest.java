@@ -22,15 +22,18 @@ class TestTask implements Runnable{
     String name;
     long time;
     CountDownLatch latch;
+
     public TestTask(String name, long time, CountDownLatch latch){
         this.name = name;
         this.time = time;
         this.latch = latch;
+
     }
 
     @Override
     public void run() {
         System.out.println(name + "开始工作");
+        latch.countDown();
         try {
             Thread.sleep(time);
         } catch (InterruptedException e) {

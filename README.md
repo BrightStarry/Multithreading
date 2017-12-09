@@ -519,7 +519,7 @@ Compare and swap(比较且交换)CAS算法。是基于cpu硬件的。 CAS是乐�
             发起异步请求的步骤是 创建一个真实返回的对象(RealData),创建时，这个对象就自己去查询数据了（相当于这个新的线程被阻塞了，反正就是去做事了）。
             最后调用代理对象的getResult方法，在这个方法中，调用真实对象的getResult方法，如果，此时真实对象获取到了数据，那么会直接返回，
             如果没有，那么这个getResult()会被阻塞，直到对象获取完毕。
-        !!!
+        ****!!!****
         FutureTask则是一个RunnableFuture<V>，即实现了Runnbale又实现了Futrue<V>这两个接口，另外它还可以包装Runnable和Callable<V>，
         所以一般来讲是一个符合体了，它可以通过Thread包装来直接执行，也可以提交给ExecuteService来执行，并且还可以通过v get()返回执行结果，
         在线程体没有执行完成的时候，主线程一直阻塞等待，执行完则直接返回结果。
